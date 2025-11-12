@@ -15,9 +15,13 @@ animate();
 function init() {
   scene = new THREE.Scene();
 
-  // 🌤️ Sky-like gradient background
-  const topColor = new THREE.Color(0xbfd9ff); // light sky blue
-  const bottomColor = new THREE.Color(0xe6edf3); // pale horizon
+  // 🌈 Soft gradient background (sky)
+  const topColor = new THREE.Color(0xb5d9ff); // sky blue
+  const bottomColor = new THREE.Color(0xf2f6ff); // soft white-blue
+  const uniforms = {
+    topColor: { value: topColor },
+    bottomColor: { value: bottomColor },
+  };
   const vertexShader = `
     varying vec2 vUv;
     void main() {
@@ -33,89 +37,105 @@ function init() {
       gl_FragColor = vec4(mix(bottomColor, topColor, vUv.y), 1.0);
     }
   `;
-  const gradientMaterial = new THREE.ShaderMaterial({
+  const gradientMat = new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms: {
-      topColor: { value: topColor },
-      bottomColor: { value: bottomColor },
-    },
+    uniforms,
     side: THREE.BackSide,
   });
-  const skyGeo = new THREE.SphereGeometry(50, 32, 15);
-  const sky = new THREE.Mesh(skyGeo, gradientMaterial);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 15), gradientMat);
   scene.add(sky);
 
-  // 🎥 Camera setup
-  camera = new THREE.PerspectiveCamera(
-    50,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    100
-  );
+  // 📷 Camera setup
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.3, 5);
 
-  // 🖥️ Renderer setup
+  // 🖥️ Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // 🎮 Controls
+  // 🎮 Orbit Controls (disabled zoom)
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.enableZoom = false;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.6;
 
-  // 💡 Lighting
-  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
-  hemiLight.position.set(0, 20, 0);
-  scene.add(hemiLight);
+  // 💡 Lighting (soft 3-point light setup)
+  const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+  scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  dirLight.position.set(5, 10, 5);
-  dirLight.castShadow = true;
-  scene.add(dirLight);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  keyLight.position.set(5, 5, 5);
+  keyLight.castShadow = true;
+  scene.add(keyLight);
 
-  // 🧸 Load the 3D model
+  const rimLight = new THREE.DirectionalLight(0x99ccff, 1);
+  rimLight.position.set(-5, 3, -3);
+  scene.add(rimLight);
+
+  // 🧸 Model Loader
   const loader = new GLTFLoader();
   loader.load("/model.glb", (gltf) => {
     model = gltf.scene;
-    model.scale.set(1, 1, 1);
-    model.position.set(0, -0.5, 0);
+    model.scale.set(1.2, 1.2, 1.2);
+    model.position.set(0, -0.7, 0);
     model.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+        // add subtle material tweak
+        child.material.envMapIntensity = 0.8;
+        child.material.metalness = 0.2;
+        child.material.roughness = 0.4;
       }
     });
     scene.add(model);
   });
 
-  // 🔤 3D Text
+  // ✨ Floating Glass Text
   const fontLoader = new FontLoader();
   fontLoader.load(
     "https://threejs.org/examples/fonts/helvetiker_regular.typeface.json",
     (font) => {
-      const textGeometry = new TextGeometry("Little Tigers 3D", {
-        font: font,
-        size: 0.3,
-        height: 0.05,
+      const textGeo = new TextGeometry("Little Tigers 3D", {
+        font,
+        size: 0.45,
+        height: 0.1,
         bevelEnabled: true,
         bevelThickness: 0.02,
-        bevelSize: 0.005,
-        bevelOffset: 0,
+        bevelSize: 0.008,
         bevelSegments: 5,
       });
-      const textMaterial = new THREE.MeshStandardMaterial({
-        color: 0x2f3542,
-        metalness: 0.2,
-        roughness: 0.4,
+
+      const textMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        metalness: 0.3,
+        roughness: 0.1,
+        transmission: 0.6, // makes it glassy
+        opacity: 1,
+        transparent: true,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1,
       });
-      const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-      textMesh.position.set(-1.3, 1.5, 0);
+
+      const textMesh = new THREE.Mesh(textGeo, textMat);
+      textMesh.position.set(-1.6, 1.6, 0);
+      textMesh.rotation.y = 0.1;
       textMesh.castShadow = true;
       scene.add(textMesh);
+
+      // Gentle floating animation for text
+      gsap.to(textMesh.position, {
+        y: "+=0.1",
+        duration: 3,
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut",
+      });
     }
   );
 
@@ -135,7 +155,6 @@ function sayHi() {
   if (!model) return;
   isSayingHi = true;
   idleRotation = false;
-
   gsap
     .timeline({
       onComplete: () => {
@@ -154,16 +173,14 @@ function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// 🎡 Idle rotation
-function rotateIdle() {
-  if (model && idleRotation && !isSayingHi) {
-    model.rotation.y += 0.005; // smooth continuous rotation
-  }
-}
-
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
-  rotateIdle();
+
+  // Smooth idle rotation
+  if (model && idleRotation && !isSayingHi) {
+    model.rotation.y += 0.003;
+  }
+
   renderer.render(scene, camera);
 }
